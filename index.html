@@ -291,7 +291,8 @@ const storage=(()=>{const memo={};try{const s=window.localStorage;s.getItem('__m
 const STORE='marriple-v4';
 
 // v14 Supabase wiring. Set both values before enabling cloud login.
-const MARRIPLE_SUPABASE_URL='https://gksbvgtqadoyubgtojxe.supabase.co'; // https://YOUR_PROJECT.supabase.co
+const MARRIPLE_AUTH_REDIRECT='https://chae2kim.github.io/marriple/';
+ const MARRIPLE_SUPABASE_URL='https://gksbvgtqadoyubgtojxe.supabase.co'; // https://YOUR_PROJECT.supabase.co
 const MARRIPLE_SUPABASE_ANON_KEY='sb_publishable_KdxcT2yzPsvPtZ6aqzpGMQ_NnacFTYT'; // publishable/anon key ONLY (never service_role)
 let authClient=null,authUser=null,cloudEnabled=false,cloudTimer=null,cloudWriting=false;
 let sessionInitialized=false;
@@ -310,8 +311,7 @@ function uiAccount(){
 function openAuthModal(){
  if(authUser){modal('메리플 내 계정','로그인한 계정과 클라우드 저장을 관리해요.',uiAccount());return;}
  modal('메리플 로그인','이메일로 가입하거나 로그인하세요. 비밀번호는 이 앱 파일에 저장하지 않습니다.',`
-  <button class="kakao-login-button" type="button" onclick="authKakaoLogin()" aria-label="카카오로 로그인하기"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#191919" d="M12 3C5.92 3 1 6.88 1 11.66c0 3.06 2.02 5.75 5.06 7.28l-1.03 3.78a.48.48 0 0 0 .72.53l4.56-3.05c.55.08 1.11.12 1.69.12 6.08 0 11-3.88 11-8.66S18.08 3 12 3Z"/></svg>카카오로 시작하기</button>
-  <div class="auth-divider">또는 이메일로 시작하기</div>
+   <p class="account-warning">카카오 로그인은 정식 오픈 시 제공할 예정이에요. 현재는 이메일로 가입해 주세요.</p>
  <div class="fields"><div class="field"><label>이메일</label><input id="authEmail" type="email" autocomplete="email" placeholder="hello@example.com"></div>
  <div class="field"><label>비밀번호 (8자 이상)</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></div>
  <div class="account-actions"><button class="main" type="button" onclick="authPasswordAction('login')">로그인</button><button type="button" onclick="authPasswordAction('signup')">회원가입</button><button type="button" onclick="authResetPassword()">비밀번호 재설정</button></div>
@@ -320,7 +320,7 @@ function openAuthModal(){
 async function authKakaoLogin(){
   if(!ensureAuth())return;
   try{
-    const redirectTo=window.location.origin+window.location.pathname;
+    const redirectTo=MARRIPLE_AUTH_REDIRECT;
     const {error}=await authClient.auth.signInWithOAuth({provider:'kakao',options:{redirectTo}});
     if(error)throw error;
   }catch(err){alert('카카오 로그인 연결 실패: '+(err?.message||'카카오 개발자 설정을 확인해 주세요.'));}
@@ -331,13 +331,13 @@ async function authPasswordAction(kind){
  const email=document.getElementById('authEmail')?.value.trim(),password=document.getElementById('authPassword')?.value||'';
  if(!email||password.length<8){alert('이메일과 8자 이상 비밀번호를 입력해 주세요.');return;}
  try{
- const result=kind==='signup'?await authClient.auth.signUp({email,password}):await authClient.auth.signInWithPassword({email,password});
+ const result=kind==='signup'?await authClient.auth.signUp({email,password,options:{emailRedirectTo:MARRIPLE_AUTH_REDIRECT}}):await authClient.auth.signInWithPassword({email,password});
  if(result.error)throw result.error;
  if(kind==='signup'&&!result.data.session){alert('가입 신청이 완료됐어요. 이메일 인증을 마친 뒤 로그인해 주세요.');closeModal();return;}
  closeModal();toast(kind==='signup'?'회원가입 완료':'로그인 완료');
  }catch(err){alert('인증 실패: '+(err.message||'다시 시도해 주세요.'));}
 }
-async function authResetPassword(){if(!ensureAuth())return;const email=document.getElementById('authEmail')?.value.trim();if(!email){alert('이메일을 입력해 주세요.');return;}try{const {error}=await authClient.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;alert('비밀번호 변경 이메일을 보냈어요.');}catch(e){alert(e.message);}}
+async function authResetPassword(){if(!ensureAuth())return;const email=document.getElementById('authEmail')?.value.trim();if(!email){alert('이메일을 입력해 주세요.');return;}try{const {error}=await authClient.auth.resetPasswordForEmail(email,{redirectTo:MARRIPLE_AUTH_REDIRECT});if(error)throw error;alert('비밀번호 변경 이메일을 보냈어요.');}catch(e){alert(e.message);}}
 async function initAuth(){
  if(!cloudConfigured())return;
  if(!window.supabase?.createClient){console.warn('Supabase SDK 로딩 실패');return;}
