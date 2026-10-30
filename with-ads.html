@@ -273,6 +273,11 @@ html,body,#app,.safe,.phone,.screen{background:#fff!important}
 .account-actions button.main{background:#b998a2;color:#fff}
 .account-warning{background:#fffaf0;border:1px solid #eee2cc;padding:12px;border-radius:12px;color:#8a714a;font-size:12px;line-height:1.6}
 @media(max-width:360px){.account-pill{max-width:105px;font-size:10px}.status{gap:5px}}
+
+/* v14.1 · Kakao OAuth sign-in */
+.kakao-login-button{display:flex;width:100%;align-items:center;justify-content:center;gap:9px;border:0;border-radius:14px;padding:14px 16px;margin:12px 0 9px;background:#FEE500;color:#191919;font-size:14px;font-weight:800;cursor:pointer;min-height:48px}
+.kakao-login-button:hover{background:#f6dc00}.kakao-login-button:focus-visible{outline:3px solid #a68798;outline-offset:3px}
+.kakao-login-button svg{width:19px;height:19px;flex-shrink:0}.auth-divider{display:flex;gap:12px;align-items:center;color:#95878d;font-size:11px;margin:12px 0}.auth-divider:before,.auth-divider:after{content:'';height:1px;background:#eee5e9;flex:1}
 </style>
 </head>
 <body>
@@ -305,10 +310,20 @@ function uiAccount(){
 function openAuthModal(){
  if(authUser){modal('메리플 내 계정','로그인한 계정과 클라우드 저장을 관리해요.',uiAccount());return;}
  modal('메리플 로그인','이메일로 가입하거나 로그인하세요. 비밀번호는 이 앱 파일에 저장하지 않습니다.',`
+  <button class="kakao-login-button" type="button" onclick="authKakaoLogin()" aria-label="카카오로 로그인하기"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#191919" d="M12 3C5.92 3 1 6.88 1 11.66c0 3.06 2.02 5.75 5.06 7.28l-1.03 3.78a.48.48 0 0 0 .72.53l4.56-3.05c.55.08 1.11.12 1.69.12 6.08 0 11-3.88 11-8.66S18.08 3 12 3Z"/></svg>카카오로 시작하기</button>
+  <div class="auth-divider">또는 이메일로 시작하기</div>
  <div class="fields"><div class="field"><label>이메일</label><input id="authEmail" type="email" autocomplete="email" placeholder="hello@example.com"></div>
  <div class="field"><label>비밀번호 (8자 이상)</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></div>
  <div class="account-actions"><button class="main" type="button" onclick="authPasswordAction('login')">로그인</button><button type="button" onclick="authPasswordAction('signup')">회원가입</button><button type="button" onclick="authResetPassword()">비밀번호 재설정</button></div>
  <p class="account-warning">${cloudConfigured()?'회원가입 뒤 이메일 인증이 필요할 수 있어요.':'아직 Supabase 설정 전이므로 실제 로그인은 사용할 수 없어요. 설정 방법은 함께 제공하는 안내 파일에 있어요.'}</p></div>`);
+}
+async function authKakaoLogin(){
+  if(!ensureAuth())return;
+  try{
+    const redirectTo=window.location.origin+window.location.pathname;
+    const {error}=await authClient.auth.signInWithOAuth({provider:'kakao',options:{redirectTo}});
+    if(error)throw error;
+  }catch(err){alert('카카오 로그인 연결 실패: '+(err?.message||'카카오 개발자 설정을 확인해 주세요.'));}
 }
 function ensureAuth(){if(!authClient){alert('로그인 서버 연결 전입니다. Supabase URL 및 공개 키를 설정해 주세요.');return false;}return true;}
 async function authPasswordAction(kind){
