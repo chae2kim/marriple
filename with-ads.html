@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>메리플 Marriple · 웨딩 플래너 v12</title>
+<title>메리플 Marriple · 웨딩 플래너</title>
 <style>
-500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
 :root{
   --bg:#fffafb;
   --paper:#ffffff;
@@ -329,6 +329,7 @@ html,body,#app,.safe,.phone,.screen{background:#fff!important}
 @keyframes splash-dot{0%,65%,100%{opacity:.35;transform:scale(.8)}30%{opacity:1;transform:scale(1.15)}}
 @media(prefers-reduced-motion:reduce){.splash-content,.splash-dots span{animation:none!important}#marripleSplash{transition:none}}
 
+.cloud-status{display:inline-flex;max-width:100%;font-size:11px;color:#806f76;padding:5px 9px;background:#f6f0f3;border-radius:50px;line-height:1.35}.cloud-status.ok{background:#eef7f0;color:#3f8664}.cloud-status.warn{background:#fff1e9;color:#a96343}
 </style>
 </head>
 <body>
@@ -355,100 +356,32 @@ const MARRIPLE_AUTH_REDIRECT='https://chae2kim.github.io/marriple/';
  const MARRIPLE_SUPABASE_URL='https://gksbvgtqadoyubgtojxe.supabase.co'; // https://YOUR_PROJECT.supabase.co
 const MARRIPLE_SUPABASE_ANON_KEY='sb_publishable_KdxcT2yzPsvPtZ6aqzpGMQ_NnacFTYT'; // publishable/anon key ONLY (never service_role)
 let authClient=null,authUser=null,cloudEnabled=false,cloudTimer=null,cloudWriting=false;
-let sessionInitialized=false;
+let sessionInitialized=false, accountLoading=false, cloudVersion=null, cloudStatus='guest', cloudDirty=false, cloudConflict=false;
 const cloudConfigured=()=>/^https:\/\/[a-z0-9.-]+\.supabase\.co$/i.test(MARRIPLE_SUPABASE_URL.trim()) && MARRIPLE_SUPABASE_ANON_KEY.trim().length>20;
 const accountKey=id=>STORE+'-user-'+id;
-const cleanSharedState=(obj)=>{const x={...obj};delete x.current;delete x.selectedDate;delete x.calendarMode;delete x.calendarFilter;return x;};
-function freshAccount(){const s=defaults();s.contracts=[];s.expenses=[];s.events=[];s.names=['나','파트너'];s.invitation={title:'',url:''};return s;}
-function uiAccount(){
-  const active=!!authUser;
-  return `<div class="account-card"><div style="font-weight:800;font-size:15px">👤 내 계정 · ${active?'로그인됨':'게스트 모드'}</div>
-   <p>${active?esc(authUser.email||'로그인 사용자'):'현재 일정·지출은 이 기기에만 저장돼요. 로그인하면 클라우드로 저장해 다른 기기에서도 사용할 수 있어요.'}</p>
-   <div class="account-actions">${active?`<button class="main" onclick="cloudSaveNow()">☁️ 클라우드 저장</button><button onclick="cloudRestorePrompt()">↻ 불러오기</button><button onclick="openGuestImport()">기존 게스트 자료 가져오기</button><button onclick="authSignOut()">로그아웃</button>`:`<button class="main" onclick="openAuthModal()">로그인 / 회원가입</button>`}</div>
-   ${active?`<p>상태: ${cloudEnabled?'자동 동기화 켜짐':'자동 동기화 꺼짐 · 수동 저장 가능'} · PRO 이용권은 추후 서버 연동 예정</p>`:''}
-   ${!cloudConfigured()?'<p class="account-warning">현재 로그인 서비스 설정 전이에요. Supabase 프로젝트 URL과 공개 키, 데이터베이스 설정을 완료해야 실제 로그인할 수 있어요.</p>':''}</div>`;
-}
-function openAuthModal(){
- if(authUser){modal('메리플 내 계정','로그인한 계정과 클라우드 저장을 관리해요.',uiAccount());return;}
- modal('메리플 로그인','이메일로 가입하거나 로그인하세요. 비밀번호는 이 앱 파일에 저장하지 않습니다.',`
-   <p class="account-warning">카카오 로그인은 정식 오픈 시 제공할 예정이에요. 현재는 이메일로 가입해 주세요.</p>
- <div class="fields"><div class="field"><label>이메일</label><input id="authEmail" type="email" autocomplete="email" placeholder="hello@example.com"></div>
- <div class="field"><label>비밀번호 (8자 이상)</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></div>
- <div class="account-actions"><button class="main" type="button" onclick="authPasswordAction('login')">로그인</button><button type="button" onclick="authPasswordAction('signup')">회원가입</button><button type="button" onclick="authResetPassword()">비밀번호 재설정</button></div>
- <p class="account-warning">${cloudConfigured()?'회원가입 뒤 이메일 인증이 필요할 수 있어요.':'아직 Supabase 설정 전이므로 실제 로그인은 사용할 수 없어요. 설정 방법은 함께 제공하는 안내 파일에 있어요.'}</p></div>`);
-}
-async function authKakaoLogin(){
-  if(!ensureAuth())return;
-  try{
-    const redirectTo=MARRIPLE_AUTH_REDIRECT;
-    const {error}=await authClient.auth.signInWithOAuth({provider:'kakao',options:{redirectTo}});
-    if(error)throw error;
-  }catch(err){alert('카카오 로그인 연결 실패: '+(err?.message||'카카오 개발자 설정을 확인해 주세요.'));}
-}
-function ensureAuth(){if(!authClient){alert('로그인 서버 연결 전입니다. Supabase URL 및 공개 키를 설정해 주세요.');return false;}return true;}
-async function authPasswordAction(kind){
- if(!ensureAuth())return;
- const email=document.getElementById('authEmail')?.value.trim(),password=document.getElementById('authPassword')?.value||'';
- if(!email||password.length<8){alert('이메일과 8자 이상 비밀번호를 입력해 주세요.');return;}
- try{
- const result=kind==='signup'?await authClient.auth.signUp({email,password,options:{emailRedirectTo:MARRIPLE_AUTH_REDIRECT}}):await authClient.auth.signInWithPassword({email,password});
- if(result.error)throw result.error;
- if(kind==='signup'&&!result.data.session){alert('가입 신청이 완료됐어요. 이메일 인증을 마친 뒤 로그인해 주세요.');closeModal();return;}
- closeModal();toast(kind==='signup'?'회원가입 완료':'로그인 완료');
- }catch(err){alert('인증 실패: '+(err.message||'다시 시도해 주세요.'));}
-}
-async function authResetPassword(){if(!ensureAuth())return;const email=document.getElementById('authEmail')?.value.trim();if(!email){alert('이메일을 입력해 주세요.');return;}try{const {error}=await authClient.auth.resetPasswordForEmail(email,{redirectTo:MARRIPLE_AUTH_REDIRECT});if(error)throw error;alert('비밀번호 변경 이메일을 보냈어요.');}catch(e){alert(e.message);}}
-async function initAuth(){
- if(!cloudConfigured())return;
- if(!window.supabase?.createClient){console.warn('Supabase SDK 로딩 실패');return;}
- authClient=window.supabase.createClient(MARRIPLE_SUPABASE_URL,MARRIPLE_SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
- const {data:{session}}=await authClient.auth.getSession();
- if(session?.user)await useAccount(session.user);sessionInitialized=true;
- authClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.user&&authUser?.id!==session.user.id)queueMicrotask(()=>useAccount(session.user));if(event==='SIGNED_OUT')queueMicrotask(()=>resetGuest());});
- render();
-}
-function resetGuest(){authUser=null;cloudEnabled=false;clearTimeout(cloudTimer);state=load();render();toast('로그아웃했어요. 게스트 데이터는 따로 보관됩니다.');}
-async function useAccount(user){
- if(authUser?.id===user.id)return;
- clearTimeout(cloudTimer);authUser=user;cloudEnabled=false;
- let cached=null;try{cached=JSON.parse(storage.getItem(accountKey(user.id))||'null')}catch(e){}
- state={...freshAccount(),...(cached||{})};state.current='home';render();
- try{
- const {data,error}=await authClient.from('wedding_data').select('data').eq('user_id',user.id).maybeSingle();
- if(error)throw error;
- if(data?.data){state={...freshAccount(),...data.data,current:'home'};storage.setItem(accountKey(user.id),JSON.stringify(state));cloudEnabled=true;render();toast('계정의 웨딩 데이터를 불러왔어요.');}
- else{cloudEnabled=true;render();toast('새 계정이에요. 기존 게스트 자료를 가져오거나 새로 시작할 수 있어요.');}
- }catch(e){console.error(e);toast('클라우드 조회 실패 · 현재 기기 자료만 표시됩니다.');}
-}
+const cleanSharedState=obj=>{const x={...obj};delete x.current;delete x.selectedDate;delete x.calendarMode;delete x.calendarFilter;return x};
+function freshAccount(){const s=defaults();s.contracts=[];s.expenses=[];s.events=[];s.budget=0;s.weddingDate='';s.names=['나','파트너'];s.invitation={title:'',url:''};return s;}
+function cloudStatusText(){return ({guest:'이 기기에만 저장',loading:'계정 자료 불러오는 중',saved:'클라우드 저장 완료',saving:'클라우드에 저장 중',pending:'기기 저장 완료 · 클라우드 대기 중',offline:'클라우드 저장 실패 · 기기에 보관됨',conflict:'다른 기기에서 변경됨 · 덮어쓰기 방지',error:'클라우드 연결 확인 필요'})[cloudStatus]||'저장 상태 확인 필요';}
+function cloudStatusMarkup(){return `<span class="cloud-status ${cloudStatus==='saved'?'ok':cloudStatus==='conflict'||cloudStatus==='offline'||cloudStatus==='error'?'warn':''}" role="status" aria-live="polite">${esc(cloudStatusText())}</span>`;}
+function refreshCloudStatus(){document.querySelectorAll('.cloud-status').forEach(el=>{el.textContent=cloudStatusText();el.classList.toggle('ok',cloudStatus==='saved');el.classList.toggle('warn',['conflict','offline','error'].includes(cloudStatus));});}
+function setCloudStatus(status){cloudStatus=status;refreshCloudStatus();}
+function uiAccount(){const active=!!authUser;return `<div class="account-card"><div style="font-weight:800;font-size:15px">👤 내 계정 · ${active?'로그인됨':'게스트 모드'}</div><p>${active?esc(authUser.email||'로그인 사용자'):'현재 자료는 이 기기에만 저장돼요. 로그인하면 클라우드 동기화를 사용할 수 있어요.'}</p><p>${cloudStatusMarkup()}</p><div class="account-actions">${active?`<button class="main" onclick="cloudSaveNow()">☁️ 저장 다시 시도</button><button onclick="cloudRestorePrompt()">↻ 클라우드 불러오기</button><button onclick="openGuestImport()">게스트 자료 가져오기</button><button onclick="authSignOut()">로그아웃</button>`:`<button class="main" onclick="openAuthModal()">로그인 / 회원가입</button>`}</div>${active?'<p class="small muted">다른 기기와 충돌하면 자동 덮어쓰기를 멈춥니다. 현재 데이터는 기기에 보존됩니다.</p>':''}</div>`;}
+function openAuthModal(){if(authUser){modal('메리플 내 계정','계정별 데이터 저장을 관리해요.',uiAccount());return;}modal('메리플 로그인','이메일로 가입하거나 로그인하세요. 비밀번호는 앱 파일에 저장하지 않아요.',`<p class="account-warning">카카오 로그인은 정식 오픈 시 제공 예정이에요.</p><div class="fields"><div class="field"><label>이메일</label><input id="authEmail" type="email" autocomplete="email" placeholder="hello@example.com"></div><div class="field"><label>비밀번호 (8자 이상)</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="8자 이상"></div><div class="account-actions"><button class="main" type="button" onclick="authPasswordAction('login')">로그인</button><button type="button" onclick="authPasswordAction('signup')">회원가입</button><button type="button" onclick="authResetPassword()">비밀번호 재설정</button></div><p class="account-warning">회원가입 뒤 이메일 인증이 필요할 수 있어요.</p></div>`);}
+async function authKakaoLogin(){alert('카카오 로그인은 추후 제공 예정입니다.');}
+function ensureAuth(){if(!authClient){alert('로그인 서버 연결을 확인해 주세요.');return false;}return true;}
+async function authPasswordAction(kind){if(!ensureAuth())return;const email=document.getElementById('authEmail')?.value.trim(),password=document.getElementById('authPassword')?.value||'';if(!email||password.length<8)return alert('이메일과 8자 이상 비밀번호를 입력해 주세요.');try{const result=kind==='signup'?await authClient.auth.signUp({email,password,options:{emailRedirectTo:MARRIPLE_AUTH_REDIRECT}}):await authClient.auth.signInWithPassword({email,password});if(result.error)throw result.error;if(kind==='signup'&&!result.data.session){alert('이메일 인증 후 로그인해 주세요.');closeModal();return;}closeModal();toast(kind==='signup'?'회원가입 완료':'로그인 완료');}catch(err){alert('인증 실패: '+(err.message||'다시 시도해 주세요.'));}}
+async function authResetPassword(){if(!ensureAuth())return;const email=document.getElementById('authEmail')?.value.trim();if(!email)return alert('이메일을 입력해 주세요.');try{const {error}=await authClient.auth.resetPasswordForEmail(email,{redirectTo:MARRIPLE_AUTH_REDIRECT});if(error)throw error;alert('비밀번호 변경 이메일을 보냈어요.');}catch(e){alert(e.message);}}
+async function initAuth(){if(!cloudConfigured())return;if(!window.supabase?.createClient){console.warn('Supabase SDK 로딩 실패');return;}authClient=window.supabase.createClient(MARRIPLE_SUPABASE_URL,MARRIPLE_SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});authClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.user&&authUser?.id!==session.user.id)queueMicrotask(()=>useAccount(session.user));if(event==='SIGNED_OUT')queueMicrotask(()=>resetGuest());});try{const {data:{session}}=await authClient.auth.getSession();if(session?.user&&authUser?.id!==session.user.id)await useAccount(session.user);}catch(e){console.warn('세션 확인 실패',e);}sessionInitialized=true;render();}
+function resetGuest(){clearTimeout(cloudTimer);authUser=null;accountLoading=false;cloudEnabled=false;cloudVersion=null;cloudDirty=false;cloudConflict=false;setCloudStatus('guest');state=load();render();}
+async function useAccount(user){if(authUser?.id===user.id)return;clearTimeout(cloudTimer);authUser=user;accountLoading=true;cloudEnabled=false;cloudVersion=null;cloudDirty=false;cloudConflict=false;setCloudStatus('loading');let cached=null;try{cached=JSON.parse(storage.getItem(accountKey(user.id))||'null')}catch(e){}state={...freshAccount(),...(cached||{}),current:'home'};render();const id=user.id;try{const {data,error}=await authClient.from('wedding_data').select('data,updated_at').eq('user_id',id).maybeSingle();if(error)throw error;if(authUser?.id!==id)return;if(data){if(cached&&storage.getItem(accountKey(id)+'-pending')==='1'){cloudConflict=true;cloudDirty=true;setCloudStatus('conflict');toast('이 기기에 미동기화 기록이 있어요. 클라우드 자료를 덮어쓰지 않았어요.');}else{state={...freshAccount(),...data.data,current:'home'};storage.setItem(accountKey(id),JSON.stringify(state));cloudVersion=data.updated_at;setCloudStatus('saved');}}else{cloudVersion=null;setCloudStatus(cached?'pending':'saved');if(cached)cloudDirty=true;}cloudEnabled=true;accountLoading=false;render();if(cloudDirty&&!cloudConflict)scheduleCloudSave();}catch(e){console.warn('클라우드 불러오기 실패',e);if(authUser?.id===id){accountLoading=false;cloudEnabled=false;setCloudStatus('offline');render();toast('기기 자료는 보존했어요. 인터넷 연결을 확인해 주세요.');}}}
 function accountDataToStore(){return cleanSharedState(state)}
-async function cloudSaveNow(){
- if(!authUser||!authClient){openAuthModal();return;}
- try{
- const {error}=await authClient.from('wedding_data').upsert({user_id:authUser.id,data:accountDataToStore(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
- if(error)throw error;cloudEnabled=true;render();toast('클라우드 저장 완료');
- }catch(e){alert('클라우드 저장 실패: '+e.message);}
-}
-async function cloudRestorePrompt(){
- if(!authUser)return;
- if(!confirm('클라우드 데이터로 현재 화면의 계정 데이터를 교체할까요? (계정의 기기 데이터는 바뀔 수 있어요)'))return;
- try{const {data,error}=await authClient.from('wedding_data').select('data').eq('user_id',authUser.id).maybeSingle();if(error)throw error;if(!data){alert('클라우드에 저장된 데이터가 없어요.');return;}cloudEnabled=false;state={...freshAccount(),...data.data,current:'home'};storage.setItem(accountKey(authUser.id),JSON.stringify(state));cloudEnabled=true;render();toast('불러오기 완료');}catch(e){alert(e.message);}
-}
-function openGuestImport(){
- if(!authUser){openAuthModal();return;}
- const data=storage.getItem(STORE);
- if(!data)return alert('이 브라우저에서 가져올 게스트 데이터가 없어요.');
- if(!confirm('기존 게스트 데이터를 현재 계정으로 가져올까요? 기존 계정 일정과 지출을 교체합니다.'))return;
- try{cloudEnabled=false;state={...freshAccount(),...JSON.parse(data),current:'home'};storage.setItem(accountKey(authUser.id),JSON.stringify(state));render();cloudSaveNow();}catch(e){alert('가져오기 실패: '+e.message)}
-}
-async function authSignOut(){if(!authClient)return;const {error}=await authClient.auth.signOut();if(error)alert(error.message);else resetGuest();}
-function scheduleCloudSave(){
- if(!cloudEnabled||!authUser||!authClient)return;
- clearTimeout(cloudTimer);cloudTimer=setTimeout(async()=>{
- if(!authUser||!cloudEnabled)return;
- try{const {error}=await authClient.from('wedding_data').upsert({user_id:authUser.id,data:accountDataToStore(),updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;}
- catch(e){console.warn('자동 동기화 실패',e);toast('클라우드 자동 저장 실패 · 기기에는 저장됨');}
- },800);
-}
+function markCloudPending(){if(!authUser)return;cloudDirty=true;storage.setItem(accountKey(authUser.id)+'-pending','1');setCloudStatus(cloudConflict?'conflict':'pending');}
+async function cloudSaveNow(){if(!authUser||!authClient){openAuthModal();return;}if(accountLoading)return alert('계정 데이터 로딩 중이에요.');if(cloudConflict)return alert('다른 기기의 수정이 감지됐어요. 계정 메뉴에서 클라우드 자료를 확인해 주세요.');cloudDirty=true;await flushCloudSave();}
+async function flushCloudSave(){if(cloudWriting||!authUser||!cloudEnabled||accountLoading||cloudConflict)return;const id=authUser.id, snapshot=JSON.stringify(accountDataToStore()),version=cloudVersion;cloudWriting=true;setCloudStatus('saving');try{let saved;if(version===null){const result=await authClient.from('wedding_data').insert({user_id:id,data:JSON.parse(snapshot),updated_at:new Date().toISOString()}).select('updated_at').single();if(result.error){if(result.error.code==='23505')throw {conflict:true};throw result.error;}saved=result.data;}else{const result=await authClient.from('wedding_data').update({data:JSON.parse(snapshot),updated_at:new Date().toISOString()}).eq('user_id',id).eq('updated_at',version).select('updated_at').maybeSingle();if(result.error)throw result.error;if(!result.data)throw {conflict:true};saved=result.data;}if(authUser?.id!==id)return;cloudVersion=saved.updated_at;if(JSON.stringify(accountDataToStore())!==snapshot){cloudDirty=true;setCloudStatus('pending');}else{cloudDirty=false;storage.removeItem(accountKey(id)+'-pending');setCloudStatus('saved');}}catch(e){if(authUser?.id!==id)return;if(e.conflict){cloudConflict=true;setCloudStatus('conflict');toast('다른 기기에서 변경된 데이터가 있어요. 덮어쓰지 않았어요.');}else{console.warn('클라우드 저장 실패',e);setCloudStatus('offline');toast('클라우드 동기화 실패 · 기기에 보존했어요.');}}finally{cloudWriting=false;if(authUser?.id===id&&cloudDirty&&!cloudConflict&&cloudStatus==='pending')scheduleCloudSave();}}
+async function cloudRestorePrompt(){if(!authUser||accountLoading)return;const warning=cloudDirty?'이 기기의 저장되지 않은 변경 내용이 사라질 수 있어요. ':' ';if(!confirm(warning+'클라우드에 저장된 데이터로 교체할까요?'))return;const id=authUser.id;try{const {data,error}=await authClient.from('wedding_data').select('data,updated_at').eq('user_id',id).maybeSingle();if(error)throw error;if(authUser?.id!==id)return;if(!data)return alert('클라우드에 저장된 데이터가 없어요.');clearTimeout(cloudTimer);state={...freshAccount(),...data.data,current:'home'};storage.setItem(accountKey(id),JSON.stringify(state));storage.removeItem(accountKey(id)+'-pending');cloudVersion=data.updated_at;cloudDirty=false;cloudConflict=false;cloudEnabled=true;setCloudStatus('saved');render();toast('클라우드 자료를 불러왔어요.');}catch(e){alert('불러오기 실패: '+e.message);}}
+function openGuestImport(){if(!authUser||accountLoading)return;const data=storage.getItem(STORE);if(!data)return alert('가져올 게스트 자료가 없어요.');if(!confirm('기존 게스트 자료를 계정 데이터로 가져올까요? 현재 계정 자료를 교체합니다.'))return;try{clearTimeout(cloudTimer);state={...freshAccount(),...JSON.parse(data),current:'home'};storage.setItem(accountKey(authUser.id),JSON.stringify(state));cloudConflict=false;cloudDirty=true;cloudEnabled=true;markCloudPending();render();scheduleCloudSave();}catch(e){alert('가져오기 실패: '+e.message);}}
+async function authSignOut(){if(!authClient)return;if(cloudDirty&&!confirm('클라우드에 아직 저장되지 않은 내용이 있어요. 로그아웃할까요? 기기에는 보존됩니다.'))return;const {error}=await authClient.auth.signOut();if(error)alert(error.message);else resetGuest();}
+function scheduleCloudSave(){if(!authUser||accountLoading)return;markCloudPending();if(!cloudEnabled||cloudConflict)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>flushCloudSave(),1100);}
 
 const SHOW_AD=true;
 const ROAD_STORE='marriple-roadmap-v1';
@@ -497,12 +430,12 @@ function defaults(){
 }
 let state=load();
 function load(){ try{return {...defaults(), ...JSON.parse(storage.getItem(STORE)||'{}')} }catch(e){return defaults()} }
-function save(){ storage.setItem(authUser?accountKey(authUser.id):STORE, JSON.stringify(state)); scheduleCloudSave(); }
+function save(){if(authUser&&accountLoading){toast('계정 자료를 불러오는 중이에요.');return;}try{storage.setItem(authUser?accountKey(authUser.id):STORE,JSON.stringify(state));if(authUser)scheduleCloudSave();}catch(e){alert('기기 저장 실패: 저장 공간을 확인해 주세요.');}}
 function allPayments(){ return state.contracts.flatMap(c=>c.payments.map(p=>({...p, vendor:c.vendor, category:c.category, contractId:c.id, remaining:p.amount-p.paid}))); }
 function totalContract(){ return state.contracts.reduce((s,c)=>s+c.total,0); }
 function totalPaid(){ return allPayments().reduce((s,p)=>s+p.paid,0) + state.expenses.reduce((s,e)=>s+e.amount,0); }
 function upcomingPayments(){ return allPayments().filter(p=>p.remaining>0).sort((a,b)=>a.date.localeCompare(b.date)); }
-function daysToWedding(){ const now = new Date(); const w = new Date(state.weddingDate+'T00:00:00'); return Math.max(0, Math.ceil((w-now)/86400000)); }
+function daysToWedding(){ const now = new Date(); if(!state.weddingDate)return null;const w = new Date(state.weddingDate+'T12:00:00');return Math.max(0,Math.ceil((w-now)/86400000)); }
 function getWeek(){
   const base=new Date(state.selectedDate+'T12:00:00');
   const dow=base.getDay();
@@ -591,10 +524,10 @@ function render(){
 function renderPhone(){
   const week=getWeek();
   const selectedList=eventsForSelected();
-  const titleMap={home:['안녕하세요, OO님','이번 주 웨딩 준비를 한눈에 확인해요'], budget:['예산 플래너','우리 예산을 평균 데이터와 비교해요'], finance:['웨딩 가계부','쓴 돈과 앞으로 낼 돈을 간편하게 확인해요'], contracts:['계약 관리','업체별 계약금과 잔금을 정리해요'], calendar:['일정 캘린더','날짜별 준비 일정을 한눈에 봐요'], couple:['우리 둘','역할과 예산을 함께 관리해요']};
+  const titleMap={home:['안녕하세요, '+(state.names?.[0]||'')+'님','이번 주 웨딩 준비를 한눈에 확인해요'], budget:['예산 플래너','우리 예산을 평균 데이터와 비교해요'], finance:['웨딩 가계부','쓴 돈과 앞으로 낼 돈을 간편하게 확인해요'], contracts:['계약 관리','업체별 계약금과 잔금을 정리해요'], calendar:['일정 캘린더','날짜별 준비 일정을 한눈에 봐요'], couple:['우리 둘','역할과 예산을 함께 관리해요']};
   const [title,sub]=titleMap[state.current];
   return `<div class="phone ${SHOW_AD?'has-ad':''}">
-    <div class="status"><span>marriple.</span><button class="account-pill ${authUser?'logged':''}" onclick="openAuthModal()">${authUser?'✓ '+esc((authUser.email||'계정').split('@')[0]):'👤 로그인 / 가입'}</button></div>
+    <div class="status"><span>marriple.</span><button class="account-pill ${authUser?'logged':''}" onclick="openAuthModal()">${authUser?'✓ '+esc((authUser.email||'계정').split('@')[0]):'👤 로그인 / 가입'}</button>${authUser?cloudStatusMarkup():''}</div>
     <div class="screen">
       <div class="header">
         <div class="brand-row">
@@ -632,7 +565,7 @@ function viewHome(week){
  const spent=totalPaid(), owed=upcomingPayments().reduce((s,p)=>s+p.remaining,0);
  const next=[...state.events.map(e=>({title:e.title,date:e.date,kind:'일정',desc:e.place||e.type})),...upcomingPayments().map(p=>({title:p.vendor+' '+p.name,date:p.date,kind:'결제',desc:fmtMoney(p.remaining)}))].filter(e=>e.date>=dayKey(new Date())).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,2);
  return `<div class="m-home">
-   <div class="m-greeting"><span>우리 결혼 준비</span><span class="m-days">D-${daysToWedding()}</span></div>
+   <div class="m-greeting"><span>우리 결혼 준비</span><span class="m-days">${daysToWedding()===null?'날짜 미설정':'D-'+daysToWedding()}</span></div>
    <h2 class="m-heading">조금씩, 함께 준비해요.</h2>
    <div class="m-budget"><div><small>지금까지 사용한 금액</small><strong>${fmtMoney(spent)}</strong></div><div><small>앞으로 낼 돈</small><strong>${fmtMoney(owed)}</strong></div></div>
    <div class="m-character"><img src="${COUPLE_PNG}" alt="동글동글한 3D 신랑 신부 캐릭터"><span class="m-character-label">우리의 하루하루가 모여, 결혼 준비가 완성돼요 ♡</span></div>
@@ -688,20 +621,23 @@ function viewBudget(){
 function viewFinance(){
   const total=totalContract();
   const paid=totalPaid();
-  const remaining=Math.max(0,total-paid);
+  const remaining=allPayments().reduce((sum,p)=>sum+Math.max(0,p.remaining),0);
   return `
     <div class="stats-row">
       <div class="stat"><div class="small muted">확정 계약액</div><b>${fmtMoney(total)}</b></div>
-      <div class="stat"><div class="small muted">실지급 + 지출</div><b>${fmtMoney(paid)}</b></div>
-      <div class="stat"><div class="small muted">남은 예정 금액</div><b>${fmtMoney(remaining)}</b></div>
+      <div class="stat"><div class="small muted">실제 지급·일반 지출</div><b>${fmtMoney(paid)}</b></div>
+      <div class="stat"><div class="small muted">남은 계약 지급 예정액</div><b>${fmtMoney(remaining)}</b></div>
     </div>
     <div class="section">
       <div class="section-head"><h3>카테고리별 금액</h3><button class="link" onclick="openExpense()">+ 빠른 지출</button></div>
-      ${summaryByCategory().map(c=>`<div class="todo-card"><div class="todo-icon" style="background:${c.bg}">${c.icon}</div><div class="todo-main"><strong>${c.name}</strong><small>계약 + 지출 합계</small></div><div class="todo-right"><div class="price">${fmtMoney(c.value)}</div></div></div>`).join('')}
+      ${summaryByCategory().map(c=>`<div class="todo-card"><div class="todo-icon" style="background:${c.bg}">${c.icon}</div><div class="todo-main"><strong>${esc(c.name)}</strong><small>계약 + 지출 합계</small></div><div class="todo-right"><div class="price">${fmtMoney(c.value)}</div></div></div>`).join('')}
+    </div>
+    <div class="section"><div class="section-head"><h3>개별 지출 내역</h3><button class="link" onclick="openExpense()">＋ 지출 추가</button></div>
+      ${state.expenses.length?[...state.expenses].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>`<div class="todo-card"><div class="todo-main"><strong>${esc(e.name)}</strong><small>${esc(e.date||'날짜 미정')} · ${esc(e.category||'기타')} · ${esc(e.payer||'나')}</small></div><div class="todo-right"><div class="price">${fmtMoney(e.amount)}</div><button class="tag" onclick="editExpense('${e.id}')">수정</button><button class="tag pink" onclick="removeExpense('${e.id}')">삭제</button></div></div>`).join(''):'<div class="todo-card"><div class="todo-main"><small>아직 개별 지출이 없어요.</small></div></div>'}
     </div>
     <div class="section">
       <div class="section-head"><h3>가까운 결제 일정</h3></div>
-      ${upcomingPayments().slice(0,5).map(p=>`<div class="todo-card"><div class="todo-icon" style="background:var(--blue)">💳</div><div class="todo-main"><strong>${p.vendor} · ${p.name}</strong><small>${p.date} · 남은 ${fmtMoney(p.remaining)}</small></div><div class="todo-right"><button class="tag blue" onclick="showPayment('${p.contractId}','${p.id}')">지급 처리</button></div></div>`).join('') || '<div class="todo-card"><div class="todo-main"><small>남은 결제 일정이 없어요.</small></div></div>'}
+      ${upcomingPayments().slice(0,5).map(p=>`<div class="todo-card"><div class="todo-icon" style="background:var(--blue)">💳</div><div class="todo-main"><strong>${esc(p.vendor)} · ${esc(p.name)}</strong><small>${esc(p.date||'날짜 미정')} · 남은 ${fmtMoney(p.remaining)}</small></div><div class="todo-right"><button class="tag blue" onclick="showPayment('${p.contractId}','${p.id}')">지급 처리</button></div></div>`).join('') || '<div class="todo-card"><div class="todo-main"><small>남은 결제 일정이 없어요.</small></div></div>'}
     </div>`;
 }
 function summaryByCategory(){
@@ -731,7 +667,7 @@ function viewContracts(){
             const balance=Math.max(0,(Number(p.amount)||0)-(Number(p.paid)||0));
             return `<div class="contract-payment"><div class="contract-payment-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.date||'날짜 미정')} · ${fmtMoney(p.amount)}</small><small>${balance<=0?'✓ 지급 완료':'남은 금액 '+fmtMoney(balance)}</small></div><button class="contract-pay-btn" onclick="showPayment('${c.id}','${p.id}')">상세 · 결제</button></div>`;
           }).join(''):'<p class="small muted">등록된 결제 회차가 없어요.</p>'}</div>
-          <button class="contract-add-btn" onclick="addInstallment('${c.id}')">＋ 결제 회차 추가</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="contract-add-btn" onclick="editContract('${c.id}')">계약 정보 수정</button><button class="contract-add-btn" onclick="addInstallment('${c.id}')">＋ 결제 회차 추가</button></div>
         </div>
       </details>`;
     }).join(''):'<div class="todo-card"><div class="todo-main"><strong>등록된 계약이 없어요</strong><small>웨딩홀이나 스튜디오 계약부터 추가해 보세요.</small></div></div>'}
@@ -752,27 +688,25 @@ function viewCalendar(week,list){
     <div class="cal-legend"><span><i class="cdot pink"></i>준비</span><span><i class="cdot blue"></i>결제</span><span><i class="cdot peach"></i>셀렉·방문</span><span><i class="cdot green"></i>반납</span></div></div>
     <div class="section"><div class="section-head"><h3>일정만 골라보기</h3><span class="small muted">카테고리 필터</span></div><div class="filter-grid">${cats().map(c=>`<button class="filter-tile ${state.calendarFilter===c?'active':''}" onclick="setFilter('${c}')"><span class="filter-icon">${(WEDDING_CATEGORIES[c]?.icon||({'전체':'🗓️','결제':'💳'})[c])}</span><span>${c}</span></button>`).join('')}</div></div>
     <div class="section"><div class="section-head"><h3>${sel.getMonth()+1}월 ${sel.getDate()}일 일정 <span class="count">${list.length}</span></h3><button class="link" onclick="exportICS()">캘린더 저장 ↗</button></div>
-    <div class="timeline">${list.length?list.map((e,idx)=>`<div class="event"><div class="dot"></div><div class="event-card ${idx===0?'highlight':''}"><div class="event-top"><div><div class="event-time">${e.kind==='payment'?'💳 결제':(WEDDING_CATEGORIES[inferEventCategory(e)]?.icon||'🗓️')+' '+esc(inferEventCategory(e))+' · '+esc(eventAction(e))}</div><strong style="display:block;font-size:16px;margin-top:5px">${escapeHtml(e.title)}</strong></div><span class="tag ${colorFor(e.type)}">${e.kind==='payment'?'지급 예정':'준비 일정'}</span></div><p>${escapeHtml(e.address||e.place||e.desc||'장소·메모 미입력')}</p>${(e.place||e.address||e.placeUrl)?`<p><a class="link" href="${safePlaceUrl(e.placeUrl)||defaultPlaceLink(e.place,e.address)}" target="_blank" rel="noopener noreferrer">📍 지도에서 보기 (검색) ↗</a></p>`:''}${e.kind!=='payment'?`<div class="event-cost">${e.expenseId?'💸 연결된 지출 있음':''}${e.contractId?' · 💍 연결된 계약 있음':''}</div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="tag pink" onclick="removeEvent('${e.id}')">삭제</button></div>`:''}</div></div>`).join(''):`<div class="empty-schedule"><span>🗓️</span><strong>이 날짜에는 해당 일정이 없어요</strong><p>다른 카테고리를 선택하거나 새 일정을 추가해보세요.</p><button class="btn soft" onclick="openEvent()">일정 추가하기</button></div>`}</div></div>`;
+    <div class="timeline">${list.length?list.map((e,idx)=>`<div class="event"><div class="dot"></div><div class="event-card ${idx===0?'highlight':''}"><div class="event-top"><div><div class="event-time">${e.kind==='payment'?'💳 결제':(WEDDING_CATEGORIES[inferEventCategory(e)]?.icon||'🗓️')+' '+esc(inferEventCategory(e))+' · '+esc(eventAction(e))}</div><strong style="display:block;font-size:16px;margin-top:5px">${escapeHtml(e.title)}</strong></div><span class="tag ${colorFor(e.type)}">${e.kind==='payment'?'지급 예정':'준비 일정'}</span></div><p>${escapeHtml(e.address||e.place||e.desc||'장소·메모 미입력')}</p>${(e.place||e.address||e.placeUrl)?`<p><a class="link" href="${safePlaceUrl(e.placeUrl)||defaultPlaceLink(e.place,e.address)}" target="_blank" rel="noopener noreferrer">📍 지도에서 보기 (검색) ↗</a></p>`:''}${e.kind!=='payment'?`<div class="event-cost">${e.expenseId?'💸 연결된 지출 있음':''}${e.contractId?' · 💍 연결된 계약 있음':''}</div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="tag" onclick="editEvent('${e.id}')">수정</button><button class="tag pink" onclick="removeEvent('${e.id}')">삭제</button></div>`:''}</div></div>`).join(''):`<div class="empty-schedule"><span>🗓️</span><strong>이 날짜에는 해당 일정이 없어요</strong><p>다른 카테고리를 선택하거나 새 일정을 추가해보세요.</p><button class="btn soft" onclick="openEvent()">일정 추가하기</button></div>`}</div></div>`;
 }
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))}
 function viewCouple(){
-  const mine=state.expenses.filter(e=>e.payer==='나').reduce((s,e)=>s+e.amount,0)+allPayments().reduce((s,p)=>s+p.paid,0);
-  const partner=state.expenses.filter(e=>e.payer==='파트너').reduce((s,e)=>s+e.amount,0);
-  return `${invitationPanel()}<div class="stats-row"><div class="stat"><div class="small muted">OO님 결제</div><b>${fmtMoney(mine)}</b></div><div class="stat"><div class="small muted">상대방 결제</div><b>${fmtMoney(partner)}</b></div><div class="stat"><div class="small muted">공동 목표</div><b>D-${daysToWedding()}</b></div></div>
+  const mine=state.expenses.filter(e=>e.payer==='나').reduce((s,e)=>s+e.amount,0)+allPayments().reduce((s,p)=>s+(p.transactions||[]).filter(t=>t.payer==='나').reduce((a,t)=>a+(Number(t.amount)||0),0),0);
+  const partner=state.expenses.filter(e=>e.payer==='파트너').reduce((s,e)=>s+e.amount,0)+allPayments().reduce((s,p)=>s+(p.transactions||[]).filter(t=>t.payer==='파트너').reduce((a,t)=>a+(Number(t.amount)||0),0),0);
+  const unassigned=allPayments().reduce((s,p)=>s+Math.max(0,(Number(p.paid)||0)-(p.transactions||[]).filter(t=>t.payer==='나'||t.payer==='파트너').reduce((a,t)=>a+(Number(t.amount)||0),0)),0);
+  return `${invitationPanel()}${unassigned?`<p class="small muted">결제자 미지정 계약 지급액 ${fmtMoney(unassigned)}은 아래 개인별 금액에서 제외했어요.</p>`:''}<div class="stats-row"><div class="stat"><div class="small muted">${esc(state.names?.[0]||'나')} 결제</div><b>${fmtMoney(mine)}</b></div><div class="stat"><div class="small muted">${esc(state.names?.[1]||'파트너')} 결제</div><b>${fmtMoney(partner)}</b></div><div class="stat"><div class="small muted">공동 목표</div><b>${daysToWedding()===null?'날짜 미설정':'D-'+daysToWedding()}</b></div></div>
   <div class="section"><div class="section-head"><h3>함께 준비 중</h3></div>
-    <div class="todo-card"><div class="todo-icon" style="background:var(--pink-soft)">💗</div><div class="todo-main"><strong>역할 분담</strong><small>OO님: 예산/청첩장 · 상대방: 일정/장소 확인</small></div></div>
+    <div class="todo-card"><div class="todo-icon" style="background:var(--pink-soft)">💗</div><div class="todo-main"><strong>역할 분담</strong><small>커플 정보에서 이름과 날짜를 설정하고 함께 일정을 관리해요</small></div></div>
+    <div class="todo-card"><div class="todo-main"><strong>우리 커플 정보</strong><small>이름과 결혼식 날짜를 설정해요.</small></div><button class="tag" onclick="editCoupleSettings()">변경</button></div>
     ${uiAccount()}
     <div class="todo-card"><div class="todo-icon" style="background:var(--blue)">📍</div><div class="todo-main"><strong>장소 관리</strong><small>일정에 장소/주소/네이버 지도 링크를 저장할 수 있어요.</small></div></div>
     <div class="todo-card"><div class="todo-icon" style="background:var(--yellow)">📤</div><div class="todo-main"><strong>내보내기</strong><small>CSV와 ICS 파일로 가계부와 일정을 저장해둘 수 있어요.</small></div><div class="todo-right"><button class="tag blue" onclick="exportCSV()">CSV</button> <button class="tag pink" onclick="exportICS()">ICS</button></div></div>
   </div>`;
 }
-function renderDesktop(){
-  return `<div class="desktop-panel"><div class="badge">Marriple v4</div><h2>메리플 · 모바일 앱 느낌으로 리디자인</h2><p>참고 이미지의 분위기를 반영해서 <b>화이트 배경 + 핑크 포인트</b>, <b>한눈에 보는 주간 캘린더</b>, <b>필터 탭을 누르면 해당 일정만 강조되는 구조</b>로 바꿨어. 좌측은 실제로 눌러볼 수 있는 모바일형 시제품이야.</p>
-  <div class="showcase">
-    <div class="showcard"><h4>이번에 반영한 UX</h4><table class="table"><tr><th>항목</th><th>내용</th></tr><tr><td>일정</td><td>주간 캘린더 + 타입 필터 + 타임라인</td></tr><tr><td>아이콘</td><td>3D 느낌의 메리플 앱 아이콘 적용</td></tr><tr><td>디자인</td><td>화이트 바탕, 연핑크/파스텔 카드</td></tr><tr><td>장소</td><td>네이버 지도 검색 링크/주소 저장 유지</td></tr></table></div>
-    <div class="showcard"><h4>빠른 액션</h4><div class="tool-row"><button class="btn primary" onclick="openChooser()">새 항목 추가</button><button class="btn soft" onclick="exportCSV()">CSV 저장</button><button class="btn white" onclick="exportICS()">캘린더 저장</button><button class="btn white" onclick="resetDemo()">데모 초기화</button></div><div class="desktop-notice">앞으로 수정 요청이 오면 이런 식으로 <b>실제 HTML을 바로 수정해서</b> 링크와 ZIP 파일을 함께 줄게. 다음에는 월간 캘린더, 계약 상세 팝업, 커플 역할 분담 보드 같은 것도 이어서 넣을 수 있어.</div></div>
-  </div></div>`;
-}
+function editCoupleSettings(){modal('우리 커플 정보','이름과 예식일을 변경할 수 있어요.',`<div class="fields"><div class="field"><label>나의 이름</label><input id="coupleName1" maxlength="30" value="${esc(state.names?.[0]||'')}"></div><div class="field"><label>파트너 이름</label><input id="coupleName2" maxlength="30" value="${esc(state.names?.[1]||'')}"></div><div class="field"><label>결혼식 날짜</label><input id="coupleWeddingDate" type="date" value="${esc(state.weddingDate||'')}"></div></div>`,'saveCoupleSettings()');}
+function saveCoupleSettings(){state.names=[v('coupleName1')||'나',v('coupleName2')||'파트너'];state.weddingDate=v('coupleWeddingDate');save();closeModal();render();toast('커플 정보를 저장했어요');}
+function renderDesktop(){return `<div class="desktop-panel"><div class="badge">Marriple · QC</div><h2>우리의 결혼 준비, 한곳에서</h2><p>일정·계약·예산을 함께 관리하세요.</p><div class="showcase"><div class="showcard"><h4>빠른 실행</h4><div class="tool-row"><button class="btn primary" onclick="openChooser()">새 항목 추가</button><button class="btn soft" onclick="exportCSV()">가계부 내보내기</button><button class="btn white" onclick="exportICS()">일정 내보내기</button></div></div></div></div>`;}
 function go(tab){
   const changed=state.current!==tab;
   state.current=tab;
@@ -825,17 +759,51 @@ function openEvent(){
       <div class="row2"><div class="field"><label>준비 카테고리</label><select id="eventCategory" onchange="refreshEventActions()">${categoryOptions('상견례')}</select></div><div class="field"><label>세부 행동</label><select id="eventAction" onchange="autoEventTitle()">${actionOptions('상견례')}</select></div></div>
       <div class="field"><label>일정 제목</label><input id="eventTitle" placeholder="예: 상견례 장소 예약" oninput="this.dataset.edited='yes'"></div>
       <div class="field"><label>일정 날짜</label><input id="eventDate" type="date" value="${state.selectedDate||dayKey(new Date())}"></div>
-      <div class="field"><label>장소 / 업체명 (선택)</label><input id="eventPlace" placeholder="예: 본궁석갈비" oninput="updatePreview()"></div>
+      <details class="location-advanced"><summary>장소 · 계약 · 비용 상세 입력 (선택)</summary><div class="fields" style="margin-top:12px"><div class="field"><label>장소 / 업체명 (선택)</label><input id="eventPlace" placeholder="예: 본궁석갈비" oninput="updatePreview()"></div>
       <div class="field"><label>지역 또는 주소 (선택)</label><input id="eventAddress" placeholder="예: 충북 청주시 · 정확한 주소도 가능" oninput="updatePreview()"></div>
       <div class="preview-place location-preview" id="placePreview"><span class="pin">📍</span><div><strong>장소를 입력해 주세요</strong><small>입력한 장소를 일정에 저장해요.</small></div></div>
       <div class="location-help">✅ 지도를 따로 열거나 링크를 복사할 필요 없어요. 일정 저장 후 <b>지도에서 보기</b>를 누르면 네이버 지도 검색 결과가 열려요.</div>
       <details class="location-advanced"><summary>정확한 네이버 지도 링크가 있다면 직접 등록 (선택)</summary><div class="field"><label>공유 링크</label><input id="eventPlaceUrl" type="url" placeholder="https://map.naver.com/..." oninput="updatePreview()"></div><div class="location-help">동명이인 장소를 구별하고 싶을 때만 사용해 주세요. 입력하지 않아도 저장할 수 있어요.</div></details>
       <div class="field"><label>기존 계약과 연결 (선택)</label><select id="eventContract"><option value="">연결 안 함</option>${state.contracts.map(c=>`<option value="${esc(c.id)}">${esc(c.vendor)} · ${esc(c.category)}</option>`).join('')}</select></div>
       <div class="row2"><div class="field"><label>관련 지출 (선택, 원)</label><input id="eventExpenseAmount" type="text" inputmode="numeric" data-money="true" placeholder="예: 50,000"><div class="money-preview" id="eventExpenseAmountPreview">금액을 입력하면 콤마로 보여드릴게요.</div></div><div class="field"><label>결제자</label><select id="eventExpensePayer"><option>나</option><option>파트너</option></select></div></div>
-      <div class="form-hint">금액을 입력하면 가계부에도 같은 날짜로 지출이 자동 등록됩니다. 계약에 이미 반영된 금액은 중복 집계되지 않도록 여기에는 입력하지 마세요.</div>
+      <div class="form-hint">금액을 입력하면 가계부에도 같은 날짜로 지출이 자동 등록됩니다. 계약에 이미 반영된 금액은 중복 집계되지 않도록 여기에는 입력하지 마세요.</div></div></details>
     </div>`,'createEvent()');
   autoEventTitle();updatePreview();
 }
+function editEvent(id){
+ const e=state.events.find(x=>x.id===id);if(!e)return;
+ openEvent();const set=(key,value)=>{const el=document.getElementById(key);if(el)el.value=value??'';};
+ set('eventCategory',inferEventCategory(e));refreshEventActions();set('eventAction',eventAction(e));
+ set('eventTitle',e.title);document.getElementById('eventTitle').dataset.edited='yes';set('eventDate',e.date);
+ set('eventPlace',e.place);set('eventAddress',e.address);set('eventPlaceUrl',e.placeUrl);
+ set('eventContract',e.contractId||'');const x=state.expenses.find(x=>x.id===e.expenseId);
+ set('eventExpenseAmount',x?.amount||'');document.getElementById('eventExpenseAmount')?.dispatchEvent(new Event('input'));set('eventExpensePayer',x?.payer||'나');
+ document.querySelectorAll('#modalroot details').forEach(el=>el.open=true);
+ initModalEnhancements(document.getElementById('modalroot'));updatePreview();
+ const modalEl=document.querySelector('#modalroot .modal');
+ modalEl.querySelector('h3').textContent='일정 수정';modalEl.querySelector('.footer .primary').setAttribute('onclick',`updateEvent('${id}')`);
+}
+function updateEvent(id){
+ const e=state.events.find(x=>x.id===id);if(!e)return;
+ const title=v('eventTitle'),date=v('eventDate'),cat=normalizeCategory(v('eventCategory')),action=v('eventAction');
+ const amount=moneyNumber('eventExpenseAmount');if(!title||!date||!Number.isFinite(amount)||amount<0)return alert('제목·날짜·지출 금액을 확인해 주세요.');
+ const ex=state.expenses.find(x=>x.id===e.expenseId);
+ if(ex){if(amount>0){Object.assign(ex,{name:title+' · '+action,category:cat,date,amount,payer:v('eventExpensePayer')||'나'});}else{state.expenses=state.expenses.filter(x=>x.id!==ex.id);e.expenseId='';}}
+ if(!ex&&amount>0){const eid=uid();state.expenses.push({id:eid,eventId:id,name:title+' · '+action,category:cat,date,amount,payer:v('eventExpensePayer')||'나'});e.expenseId=eid;}
+ Object.assign(e,{title,date,category:cat,action,type:action,place:v('eventPlace'),address:v('eventAddress'),placeUrl:safePlaceUrl(v('eventPlaceUrl'))||defaultPlaceLink(v('eventPlace'),v('eventAddress')),contractId:v('eventContract')});
+ state.selectedDate=date;state.current='calendar';state.calendarFilter='전체';save();closeModal();render();toast('일정 변경사항을 저장했어요');
+}
+function editExpense(id){
+ const e=state.expenses.find(x=>x.id===id);if(!e)return;
+ modal('지출 수정','날짜·금액·결제자를 수정할 수 있어요.',`<div class="fields"><div class="field"><label>지출 항목</label><input id="expenseName" value="${esc(e.name)}"></div><div class="row2"><div class="field"><label>카테고리</label><select id="expenseCat">${categoryOptions(e.category)}</select></div><div class="field"><label>금액</label><input id="expenseAmount" data-money="true" type="text" inputmode="numeric" value="${Number(e.amount)||0}"><div class="money-preview" id="expenseAmountPreview"></div></div></div><div class="row2"><div class="field"><label>결제일</label><input id="expenseDate" type="date" value="${esc(e.date)}"></div><div class="field"><label>결제자</label><select id="payer"><option ${e.payer==='나'?'selected':''}>나</option><option ${e.payer==='파트너'?'selected':''}>파트너</option></select></div></div></div>`,`updateExpense('${id}')`);
+}
+function updateExpense(id){const e=state.expenses.find(x=>x.id===id);if(!e)return;const n=moneyNumber('expenseAmount');if(!v('expenseName')||!v('expenseDate')||!Number.isFinite(n)||n<=0)return alert('지출 정보를 확인해 주세요.');Object.assign(e,{name:v('expenseName'),category:v('expenseCat'),amount:n,date:v('expenseDate'),payer:v('payer')});save();closeModal();render();toast('지출을 수정했어요');}
+let qcUndo=null;
+function removeExpense(id){const e=state.expenses.find(x=>x.id===id);if(!e||!confirm('이 지출을 삭제할까요?'))return;const at=state.expenses.indexOf(e);state.expenses.splice(at,1);if(e.eventId){const event=state.events.find(x=>x.id===e.eventId);if(event)event.expenseId='';}save();render();offerUndo(()=>{state.expenses.splice(at,0,e);if(e.eventId){const event=state.events.find(x=>x.id===e.eventId);if(event)event.expenseId=e.id;}save();render();});}
+function offerUndo(restore){qcUndo=restore;const old=document.getElementById('qcUndoToast');if(old)old.remove();const el=document.createElement('div');el.id='qcUndoToast';el.className='toast';el.style.cssText='display:flex;gap:15px;align-items:center;z-index:99999';el.innerHTML='<span>삭제했어요</span><button type="button" style="background:white;color:#6a4c5b;border:0;border-radius:10px;padding:7px 12px;font-weight:700" onclick="undoLastDelete()">되돌리기</button>';document.body.append(el);setTimeout(()=>{if(el.isConnected){el.remove();if(qcUndo===restore)qcUndo=null;}},6500);}
+function undoLastDelete(){if(!qcUndo)return;const fn=qcUndo;qcUndo=null;document.getElementById('qcUndoToast')?.remove();fn();toast('삭제를 취소했어요');}
+function editContract(id){const c=state.contracts.find(x=>x.id===id);if(!c)return;modal('계약 정보 수정','지급 기록은 유지하며 업체명·카테고리·계약일을 수정해요.',`<div class="fields"><div class="field"><label>업체명</label><input id="editVendor" value="${esc(c.vendor)}"></div><div class="field"><label>카테고리</label><select id="editCategory">${categoryOptions(c.category)}</select></div><div class="field"><label>계약일</label><input id="editContractDate" type="date" value="${esc(c.contractDate||dayKey(new Date()))}"></div><div class="form-hint">총 계약금 및 각 회차 금액은 기존 지급 기록 보호를 위해 이 화면에서 변경하지 않아요.</div></div>`,`updateContract('${id}')`);}
+function updateContract(id){const c=state.contracts.find(x=>x.id===id);if(!c)return;if(!v('editVendor'))return alert('업체명을 입력해 주세요.');Object.assign(c,{vendor:v('editVendor'),category:v('editCategory'),contractDate:v('editContractDate')});save();closeModal();render();toast('계약 정보를 수정했어요');}
 function updatePreview(){
  const name=v('eventPlace'),addr=v('eventAddress'),explicit=safePlaceUrl(v('eventPlaceUrl'));
  const el=document.getElementById('placePreview'); if(!el)return;
@@ -848,7 +816,7 @@ function createContract(){ const vendor=v('vendor'); const total=moneyNumber('to
 function createExpense(){ const name=v('expenseName'); const amt=moneyNumber('expenseAmount'); if(!name||!Number.isFinite(amt)||amt<=0) return alert('지출 정보를 확인해 주세요.'); state.expenses.push({id:uid(), name, category:v('expenseCat'), amount:amt, date:v('expenseDate'), payer:v('payer')}); save(); closeModal(); state.current='finance'; render(); toast('지출을 기록했어요'); }
 function createEvent(){ const title=v('eventTitle'),cat=normalizeCategory(v('eventCategory')),action=v('eventAction'),date=v('eventDate'),place=v('eventPlace'),address=v('eventAddress');if(!title||!date)return alert('일정 제목과 날짜를 입력해 주세요.');const amt=moneyNumber('eventExpenseAmount');if(!Number.isFinite(amt)||amt<0)return alert('지출 금액을 확인해 주세요.');const id=uid();let expenseId='';if(amt>0){expenseId=uid();state.expenses.push({id:expenseId,eventId:id,name:title+' · '+action,category:cat,amount:amt,date,payer:v('eventExpensePayer')||'나'});}const contractId=v('eventContract');const placeUrl=safePlaceUrl(v('eventPlaceUrl'))||defaultPlaceLink(place,address);state.events.push({id,title,date,category:cat,action,type:action,place,address,placeUrl,contractId,expenseId});save();closeModal();state.current='calendar';state.calendarFilter='전체';state.selectedDate=date;save();render();toast(amt>0?'일정과 지출을 함께 저장했어요':'일정을 추가했어요');}
 function pay(contractId,payId){ const c=state.contracts.find(x=>x.id===contractId); const p=c?.payments.find(x=>x.id===payId); if(!p)return; const rem=p.amount-p.paid; const raw=prompt(`${c.vendor} · ${p.name}\n지급할 금액을 입력해주세요.\n남은 금액: ${fmtMoney(rem)}`, String(rem)); if(raw===null)return; const n=Number(raw); if(!Number.isFinite(n)||n<=0||n>rem) return alert('남은 금액 이하로 입력해 주세요.'); p.paid+=n; save(); render(); toast(fmtMoney(n)+' 지급 완료'); }
-function removeEvent(id){const e=state.events.find(e=>e.id===id);if(!e)return;if(!confirm(e.expenseId?'일정을 삭제할까요? 연결된 지출은 가계부에 보존됩니다.':'이 일정을 삭제할까요?'))return;state.events=state.events.filter(x=>x.id!==id);save();render();}
+function removeEvent(id){const e=state.events.find(e=>e.id===id);if(!e)return;if(!confirm(e.expenseId?'일정을 삭제할까요? 연결된 지출은 가계부에 보존됩니다.':'이 일정을 삭제할까요?'))return;const idx=state.events.indexOf(e);state.events.splice(idx,1);save();render();offerUndo(()=>{state.events.splice(idx,0,e);save();render();});}
 
 function secureUrl(u){try{const x=new URL(String(u||'').trim());return x.protocol==='https:'?x.href:''}catch(e){return ''}}
 function invitationPanel(){const i=state.invitation||{};const url=secureUrl(i.url);return `<div class="section"><div class="section-head"><h3>💌 모바일 청첩장</h3><span class="small muted">링크 보관함</span></div><div class="link-vault"><div class="link-vault-row"><div class="vault-icon">💌</div><div class="todo-main"><strong>${escapeHtml(i.title||'우리의 모바일 청첩장')}</strong><small>${url?'링크 저장 완료 · 클릭 한 번으로 공유':'청첩장 URL을 한 번만 저장해두세요'}</small></div></div><div class="link-vault-actions"><button onclick="editInvitation()">${url?'링크 수정':'링크 등록'}</button>${url?`<button onclick="openInvitation()">링크 열기</button><button class="primary-action" onclick="shareInvitation()">↗ 바로 공유</button>`:''}</div></div></div>`}
@@ -861,12 +829,12 @@ function addInstallment(id){const c=state.contracts.find(x=>x.id===id);if(!c)ret
 function saveInstallment(id){const c=state.contracts.find(x=>x.id===id);if(!c)return;const n=moneyNumber('extraAmount');const allocated=c.payments.reduce((s,p)=>s+p.amount,0);const source=[...c.payments].reverse().find(p=>p.name.includes('잔금')&&p.amount-p.paid>=n)||[...c.payments].reverse().find(p=>p.amount-p.paid>=n);if(!Number.isFinite(n)||n<=0||!source)return alert('분리할 수 있는 미지급 잔액이 부족합니다.');source.amount-=n;c.payments.push({id:uid(),name:v('extraName')||'추가 중도금',date:v('extraDate'),amount:n,paid:0,transactions:[]});save();closeModal();render()}
 
 function paymentMethodLabel(p){const t=p.transactions||[];return t.length?[...new Set(t.map(x=>x.method||'기타'))].join(' · '):p.method||'결제수단 미입력'}
-function showPayment(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;let history=(p.transactions||[]).map(t=>`<div class="payment-entry"><div class="pay-row"><strong>${escapeHtml(t.method||'기타')} · ${fmtMoney(t.amount)}</strong><span>${escapeHtml(t.date||'')}</span></div><div class="payment-detail">${escapeHtml(t.memo||'메모 없음')}</div></div>`).join('');modal(escapeHtml(c.vendor)+' · '+escapeHtml(p.name),'결제수단과 메모는 지급 기록마다 저장됩니다.',`<div class="payment-detail"><b>예정 금액</b> ${fmtMoney(p.amount)}　<b>지급 완료</b> ${fmtMoney(p.paid)}<div><b>미지급</b> ${fmtMoney(Math.max(0,p.amount-p.paid))}</div></div><h4>결제 내역</h4>${history||'<p class="small muted">아직 지급 내역이 없어요.</p>'}${p.amount>p.paid?`<button class="btn primary" onclick="openPaymentEntry('${c.id}','${p.id}')">＋ 지급 내역 추가</button>`:''}`)}
-function openPaymentEntry(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;const balance=Math.max(0,p.amount-p.paid);modal('지급 내역 추가',escapeHtml(c.vendor)+' · '+escapeHtml(p.name),`<div class="fields"><div class="field"><label>지급 금액</label><input id="paymentAmount" type="text" inputmode="numeric" data-money="true" value="${balance}"><div class="money-preview" id="paymentAmountPreview">금액을 입력하면 콤마로 보여드릴게요.</div></div><div class="row2"><div class="field"><label>결제수단</label><select id="paymentMethod"><option>계좌이체</option><option>카드</option><option>현금</option><option>기타</option></select></div><div class="field"><label>지급일</label><input id="paymentDate" type="date" value="${dayKey(new Date())}"></div></div><div class="field"><label>결제 메모 · 선택</label><textarea id="paymentMemo" rows="3" placeholder="예: 삼성카드 / 신한은행 홍길동 / 계좌번호 등"></textarea></div><p class="small muted">계좌번호는 꼭 필요할 때만 기록하세요. 현재 데모에서는 이 기기에 저장되며 별도 암호화 저장소가 아닙니다.</p></div>` ,`savePaymentEntry('${contractId}','${payId}')`)}
-function savePaymentEntry(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;const n=moneyNumber('paymentAmount'),balance=p.amount-p.paid;if(!Number.isFinite(n)||n<=0||n>balance)return alert('남은 금액 이하로 입력해 주세요.');p.transactions=p.transactions||[];p.transactions.push({id:uid(),amount:n,method:v('paymentMethod'),date:v('paymentDate'),memo:v('paymentMemo')});p.paid+=n;save();closeModal();render();toast('결제수단과 메모까지 저장했어요')}
+function showPayment(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;let history=(p.transactions||[]).map(t=>`<div class="payment-entry"><div class="pay-row"><strong>${escapeHtml(t.method||'기타')} · ${escapeHtml(t.payer==='나'?(state.names?.[0]||'나'):t.payer==='파트너'?(state.names?.[1]||'파트너'):'결제자 미지정')} · ${fmtMoney(t.amount)}</strong><span>${escapeHtml(t.date||'')}</span></div><div class="payment-detail">${escapeHtml(t.memo||'메모 없음')}</div></div>`).join('');modal(escapeHtml(c.vendor)+' · '+escapeHtml(p.name),'결제수단과 메모는 지급 기록마다 저장됩니다.',`<div class="payment-detail"><b>예정 금액</b> ${fmtMoney(p.amount)}　<b>지급 완료</b> ${fmtMoney(p.paid)}<div><b>미지급</b> ${fmtMoney(Math.max(0,p.amount-p.paid))}</div></div><h4>결제 내역</h4>${history||'<p class="small muted">아직 지급 내역이 없어요.</p>'}${p.amount>p.paid?`<button class="btn primary" onclick="openPaymentEntry('${c.id}','${p.id}')">＋ 지급 내역 추가</button>`:''}`)}
+function openPaymentEntry(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;const balance=Math.max(0,p.amount-p.paid);modal('지급 내역 추가',escapeHtml(c.vendor)+' · '+escapeHtml(p.name),`<div class="fields"><div class="field"><label>지급 금액</label><input id="paymentAmount" type="text" inputmode="numeric" data-money="true" value="${balance}"><div class="money-preview" id="paymentAmountPreview">금액을 입력하면 콤마로 보여드릴게요.</div></div><div class="row2"><div class="field"><label>결제자</label><select id="paymentPayer"><option value="나">${esc(state.names?.[0]||'나')}</option><option value="파트너">${esc(state.names?.[1]||'파트너')}</option></select></div></div><div class="row2"><div class="field"><label>결제수단</label><select id="paymentMethod"><option>계좌이체</option><option>카드</option><option>현금</option><option>기타</option></select></div><div class="field"><label>지급일</label><input id="paymentDate" type="date" value="${dayKey(new Date())}"></div></div><div class="field"><label>결제 메모 · 선택</label><textarea id="paymentMemo" rows="3" placeholder="예: 결제 확인 메모 (계좌번호 등 민감정보 제외)"></textarea></div><p class="small muted">계좌번호나 비밀번호 등 민감정보는 입력하지 마세요. 로그인 시 메모가 클라우드에도 저장될 수 있어요.</p></div>` ,`savePaymentEntry('${contractId}','${payId}')`)}
+function savePaymentEntry(contractId,payId){const c=state.contracts.find(x=>x.id===contractId),p=c?.payments.find(x=>x.id===payId);if(!p)return;const n=moneyNumber('paymentAmount'),balance=p.amount-p.paid;if(!Number.isFinite(n)||n<=0||n>balance)return alert('남은 금액 이하로 입력해 주세요.');if(!v('paymentDate'))return alert('지급일을 입력해 주세요.');p.transactions=p.transactions||[];p.transactions.push({id:uid(),amount:n,payer:v('paymentPayer')||'나',method:v('paymentMethod'),date:v('paymentDate'),memo:v('paymentMemo')});p.paid+=n;save();closeModal();render();toast('결제수단과 메모까지 저장했어요')}
 
 function exportCSV(){ let rows=[['구분','날짜','항목','카테고리','금액','상태','결제수단','비고']]; state.contracts.forEach(c=>c.payments.forEach(p=>rows.push(['계약지급',p.date,`${c.vendor} ${p.name}`,c.category,p.amount,`지급 ${p.paid}`,paymentMethodLabel(p),(p.transactions||[]).map(t=>t.memo||'').join(' / ')]))); state.expenses.forEach(e=>rows.push(['개별지출',e.date,e.name,e.category,e.amount,'지급완료','',''])); download('marriple-finance.csv', rows.map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),'text/csv;charset=utf-8'); }
-function exportICS(){ const esc=s=>String(s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); const all=[...state.events.map(e=>({id:e.id,title:e.title,date:e.date,location:e.address||e.place||''})), ...upcomingPayments().map(p=>({id:p.id,title:`${p.vendor} ${p.name} 지급 ${fmtMoney(p.remaining)}`,date:p.date,location:''}))]; let lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Marriple//KO']; all.forEach(e=>{ const d1=e.date.replace(/-/g,''); const dt=new Date(e.date+'T00:00:00'); dt.setDate(dt.getDate()+1); const d2=dt.toISOString().slice(0,10).replace(/-/g,''); lines.push('BEGIN:VEVENT',`UID:${e.id}@marriple`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')}`,`DTSTART;VALUE=DATE:${d1}`,`DTEND;VALUE=DATE:${d2}`,`SUMMARY:${esc(e.title)}`,...(e.location?[`LOCATION:${esc(e.location)}`]:[]),'END:VEVENT'); }); lines.push('END:VCALENDAR'); download('marriple-calendar.ics', lines.join('\r\n'),'text/calendar;charset=utf-8'); }
+function exportICS(){ const esc=s=>String(s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); const all=[...state.events.map(e=>({id:e.id,title:e.title,date:e.date,location:e.address||e.place||''})), ...upcomingPayments().map(p=>({id:p.id,title:`${p.vendor} ${p.name} 지급 ${fmtMoney(p.remaining)}`,date:p.date,location:''}))]; let lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Marriple//KO']; all.forEach(e=>{ const d1=e.date.replace(/-/g,''); const dt=new Date(e.date+'T12:00:00Z'); dt.setUTCDate(dt.getUTCDate()+1); const d2=dt.toISOString().slice(0,10).replace(/-/g,''); lines.push('BEGIN:VEVENT',`UID:${e.id}@marriple`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')}`,`DTSTART;VALUE=DATE:${d1}`,`DTEND;VALUE=DATE:${d2}`,`SUMMARY:${esc(e.title)}`,...(e.location?[`LOCATION:${esc(e.location)}`]:[]),'END:VEVENT'); }); lines.push('END:VCALENDAR'); download('marriple-calendar.ics', lines.join('\r\n'),'text/calendar;charset=utf-8'); }
 function download(name,body,type){ const blob=new Blob(['\ufeff',body],{type}); const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1500); }
 function resetDemo(){ if(!confirm('메리플 데모 데이터를 초기 상태로 되돌릴까요?')) return; state=defaults(); save(); render(); }
 function toast(msg){ const div=document.createElement('div'); div.className='toast'; div.textContent=msg; document.body.appendChild(div); setTimeout(()=>div.remove(),2200); }
